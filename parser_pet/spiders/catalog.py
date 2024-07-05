@@ -2,7 +2,8 @@
 import scrapy
 from scrapy.crawler import CrawlerProcess
 import sqlalchemy as db
-
+from celery import Celery
+import redis
 
 # 1. Надо спарсить используя scrapy вот этот сайт https://books.toscrape.com/ (не нужно весь сайт, 5 страниц какой-нибудь категории будет достаточно) +
 # 2. Записать в базу данных название, категорию, цену, рейтинг и наличие +
@@ -67,15 +68,27 @@ class CatalogSpider(scrapy.Spider):
 
         self.conn.execute(insertion_query)
 
-        
-
     def closed(self, reason):
         select_all_query = self.items.select()
         select_all_results = self.conn.execute(select_all_query)
         for row in select_all_results.fetchall():
             print(row)
 
-if __name__ == "__main__":
+
+app = Celery('parser', 
+             broker='redis://localhost:6379/0'
+             )
+
+@app.task
+def make_parse():
     process = CrawlerProcess()
     process.crawl(CatalogSpider)
     process.start()
+
+make_parse_after = 5
+result = make_parse.apply_async(args=[], countdown=make_parse_after)
+
+
+if __name__ == "__main__":
+   app.worker_main()
+   
